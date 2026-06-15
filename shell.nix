@@ -61,5 +61,5 @@ pkgs.mkShell {
   '';
 
   # Потрібно для mysqlclient / aiomysql
-  LD_LIBRARY_PATH = "${pkgs.libmysqlclient}/lib";
+  LD_LIBRARY_PATH = "${pkgs.stdenv.cc.cc.lib}/lib:${pkgs.libmysqlclient}/lib";
 }
