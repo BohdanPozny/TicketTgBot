@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <meta name="api-base" content="{{ api_base }}">
+  <title>Конструктор салону — Автобус</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <link rel="stylesheet" href="/static/css/miniapp.css">
+</head>
+<body>
+<div class="app">
+
+  <header class="header">
+    <div class="header__title" id="event-title">Конструктор автобуса</div>
+    <div class="header__subtitle">Налаштуйте схему місць</div>
+  </header>
+
+  <div id="error-state" class="error-state" style="display:none">
+    <div class="error-state__icon">😔</div>
+    <div class="error-state__text">Виникла помилка</div>
+  </div>
+
+  <div class="content">
+
+    <!-- Config Panel -->
+    <div class="config-panel">
+      <div class="config-field">
+        <label>Всього місць</label>
+        <input type="number" id="input-total" value="40" min="1" max="100">
+      </div>
+      <div class="config-field">
+        <label>Місць у ряду</label>
+        <input type="number" id="input-rows" value="4" min="2" max="8">
+      </div>
+      <div class="config-field" style="min-width:110px">
+        <label>Місто відправлення</label>
+        <input type="text" id="input-departure" placeholder="Київ" style="width:110px">
+      </div>
+      <div class="config-field" style="min-width:110px">
+        <label>Місто прибуття</label>
+        <input type="text" id="input-arrival" placeholder="Львів" style="width:110px">
+      </div>
+      <button class="btn-apply" onclick="applyConfig()">Застосувати</button>
+    </div>
+
+    <!-- Toolbar -->
+    <div class="toolbar">
+      <button class="tool-btn tool-btn--block active">🚫 Клік = блок/розблок</button>
+      <button class="tool-btn tool-btn--save" onclick="saveLayout()">💾 Зберегти</button>
+    </div>
+
+    <!-- Stats -->
+    <div style="font-size:0.75rem;color:var(--tg-hint);text-align:center;margin-bottom:12px" id="stats-text"></div>
+
+    <!-- Bus Layout -->
+    <div id="bus-layout" class="bus-layout"></div>
+
+    <p style="text-align:center;font-size:0.72rem;color:var(--tg-hint);margin-top:14px">
+      Натискайте на місця щоб заблокувати або розблокувати їх
+    </p>
+
+  </div>
+
+</div>
+
+<script>
+  window.__EVENT_ID__ = {{ event_id }};
+  if (!new URLSearchParams(window.location.search).get('event_id')) {
+    const url = new URL(window.location.href);
+    url.searchParams.set('event_id', window.__EVENT_ID__);
+    window.history.replaceState({}, '', url);
+  }
+</script>
+<script src="/static/js/bus_partner.js"></script>
+</body>
+</html>
