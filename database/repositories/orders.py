@@ -1,7 +1,8 @@
 from datetime import datetime
 from typing import Any, Optional
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -22,7 +23,9 @@ class OrderRepository:
 
     async def get_by_payment_payload(self, payload: str) -> Optional[Order]:
         result = await self.session.execute(
-            select(Order).where(Order.payment_payload == payload)
+            select(Order)
+            .where(Order.payment_payload == payload)
+            .options(selectinload(Order.event), selectinload(Order.user))
         )
         return result.scalar_one_or_none()
 
@@ -57,6 +60,12 @@ class OrderRepository:
         order = await self.get_by_id(order_id)
         if order:
             order.status = OrderStatus.cancelled
+            if order.seat_details and order.seat_details.get("seat_key"):
+                await self.release_seat_lock(
+                    event_id=order.event_id,
+                    seat_key=order.seat_details["seat_key"],
+                    user_id=order.user_id,
+                )
         return order
 
     async def get_user_orders(self, user_id: int) -> list[Order]:
@@ -73,7 +82,14 @@ class OrderRepository:
     async def lock_seat(
         self, event_id: int, seat_key: str, user_id: int, expires_at: datetime
     ) -> Optional[SeatLock]:
-        # Перевірити чи вже заблоковано
+        await self.session.execute(
+            delete(SeatLock).where(
+                SeatLock.event_id == event_id,
+                SeatLock.seat_key == seat_key,
+                SeatLock.expires_at <= datetime.now(),
+            )
+        )
+
         existing = await self.session.execute(
             select(SeatLock).where(
                 SeatLock.event_id == event_id,
@@ -82,7 +98,7 @@ class OrderRepository:
             )
         )
         if existing.scalar_one_or_none():
-            return None  # Місце вже заблоковано
+            return None
 
         lock = SeatLock(
             event_id=event_id,
@@ -91,8 +107,23 @@ class OrderRepository:
             expires_at=expires_at,
         )
         self.session.add(lock)
-        await self.session.flush()
+        try:
+            await self.session.flush()
+        except IntegrityError:
+            await self.session.rollback()
+            return None
         return lock
+
+    async def has_active_lock(self, event_id: int, seat_key: str, user_id: int) -> bool:
+        result = await self.session.execute(
+            select(SeatLock).where(
+                SeatLock.event_id == event_id,
+                SeatLock.seat_key == seat_key,
+                SeatLock.user_id == user_id,
+                SeatLock.expires_at > datetime.now(),
+            )
+        )
+        return result.scalar_one_or_none() is not None
 
     async def get_locked_seats(self, event_id: int) -> list[str]:
         """Повертає список ключів заблокованих місць для події."""

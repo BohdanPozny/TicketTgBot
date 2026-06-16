@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from database.models import Ticket, TicketStatus, TicketVerification, VerificationStatus
+from database.models import Event, Ticket, TicketStatus, TicketVerification, VerificationStatus
 
 
 class TicketRepository:
@@ -17,7 +17,7 @@ class TicketRepository:
             select(Ticket)
             .where(Ticket.id == ticket_id)
             .options(
-                selectinload(Ticket.event).selectinload("category"),
+                selectinload(Ticket.event).selectinload(Event.category),
                 selectinload(Ticket.user),
             )
         )
@@ -28,7 +28,7 @@ class TicketRepository:
             select(Ticket)
             .where(Ticket.qr_token_hash == qr_token_hash)
             .options(
-                selectinload(Ticket.event).selectinload("category"),
+                selectinload(Ticket.event).selectinload(Event.category),
                 selectinload(Ticket.user),
             )
         )
@@ -46,10 +46,20 @@ class TicketRepository:
         seats = []
         for t in tickets:
             if t.seat_details:
-                row = t.seat_details.get("row", "")
-                seat = t.seat_details.get("seat", "")
-                seats.append(f"{row}_{seat}")
+                seat_key = t.seat_details.get("seat_key")
+                if seat_key:
+                    seats.append(seat_key)
+                    continue
+
+                row = t.seat_details.get("row")
+                seat = t.seat_details.get("seat")
+                if row is not None and seat is not None:
+                    seats.append(f"{row}_{seat}")
         return seats
+
+    async def is_seat_sold(self, event_id: int, seat_key: str) -> bool:
+        sold_seats = await self.get_paid_seats_for_event(event_id)
+        return seat_key in sold_seats
 
     async def create(
         self,

@@ -6,7 +6,7 @@ from typing import Any, Optional
 
 from sqlalchemy import (
     BigInteger, DateTime, Enum, Float, ForeignKey,
-    Integer, JSON, String, func,
+    Integer, JSON, String, UniqueConstraint, func,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -141,6 +141,9 @@ class Ticket(Base):
 
 class SeatLock(Base):
     __tablename__ = "seat_locks"
+    __table_args__ = (
+        UniqueConstraint("event_id", "seat_key", name="uq_seat_locks_event_seat"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     event_id: Mapped[int] = mapped_column(Integer, ForeignKey("events.id", ondelete="CASCADE"), nullable=False)

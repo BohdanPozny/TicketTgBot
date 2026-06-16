@@ -1,4 +1,6 @@
+import asyncio
 from contextlib import asynccontextmanager
+from contextlib import suppress
 
 import uvicorn
 from fastapi import FastAPI, Request
@@ -14,6 +16,7 @@ from api.webhooks import router as webhook_router
 from bot.loader import bot, setup_routers
 from core.config import settings
 from database.db_setup import create_tables
+from services.verification_service import VerificationService
 
 
 @asynccontextmanager
@@ -21,6 +24,7 @@ async def lifespan(app: FastAPI):
     setup_routers()
     await create_tables()
     await _seed_categories()
+    verification_task = asyncio.create_task(_expire_verifications_loop())
 
     if settings.webhook_url:
         await bot.set_webhook(
@@ -30,6 +34,10 @@ async def lifespan(app: FastAPI):
         )
 
     yield
+
+    verification_task.cancel()
+    with suppress(asyncio.CancelledError):
+        await verification_task
 
     if settings.webhook_url:
         await bot.delete_webhook()
@@ -46,6 +54,17 @@ async def _seed_categories():
         if not categories:
             await repo.create_category("Кіно", "cinema", "🎬")
             await repo.create_category("Автобуси", "bus", "🚌")
+            await session.commit()
+
+
+async def _expire_verifications_loop() -> None:
+    from database.db_setup import async_session_factory
+
+    while True:
+        await asyncio.sleep(30)
+        async with async_session_factory() as session:
+            service = VerificationService(session)
+            await service.expire_stale_verifications()
             await session.commit()
 
 

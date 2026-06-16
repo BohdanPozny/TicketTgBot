@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
+from core.security import parse_telegram_init_data
 from database.db_setup import get_session
 from database.repositories.events import EventRepository
 from database.repositories.orders import OrderRepository
@@ -18,11 +19,11 @@ router = APIRouter(prefix="/api", tags=["miniapp"])
 
 class LayoutUpdateRequest(BaseModel):
     layout_config: dict[str, Any]
-    partner_telegram_id: int  # Для перевірки прав
+    init_data: str
 
 
 class CreateEventRequest(BaseModel):
-    partner_telegram_id: int
+    init_data: str
     category_code: str
     title: str
     event_datetime: str  # ISO format
@@ -31,7 +32,7 @@ class CreateEventRequest(BaseModel):
 
 
 class SeatLockRequest(BaseModel):
-    user_telegram_id: int
+    init_data: str
     seat_key: str
 
 
@@ -76,8 +77,12 @@ async def update_event_layout(
     """Партнер зберігає схему місць після редагування у Mini App."""
     from database.repositories.users import UserRepository
 
+    tg_user = _get_webapp_user(body.init_data)
+    if not tg_user:
+        raise HTTPException(status_code=403, detail="Invalid init data")
+
     user_repo = UserRepository(session)
-    user = await user_repo.get_by_telegram_id(body.partner_telegram_id)
+    user = await user_repo.get_by_telegram_id(tg_user["id"])
     if not user or user.role.value not in ("partner", "admin"):
         raise HTTPException(status_code=403, detail="Forbidden")
 
@@ -104,8 +109,12 @@ async def lock_seat(
     """Тимчасово блокує місце під час вибору у Mini App."""
     from database.repositories.users import UserRepository
 
+    tg_user = _get_webapp_user(body.init_data)
+    if not tg_user:
+        raise HTTPException(status_code=403, detail="Invalid init data")
+
     user_repo = UserRepository(session)
-    user = await user_repo.get_by_telegram_id(body.user_telegram_id)
+    user = await user_repo.get_by_telegram_id(tg_user["id"])
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
@@ -121,3 +130,10 @@ async def lock_seat(
         raise HTTPException(status_code=409, detail="Seat already locked")
 
     return {"ok": True, "seat_key": body.seat_key, "expires_at": expires_at.isoformat()}
+
+
+def _get_webapp_user(init_data: str) -> dict[str, Any] | None:
+    parsed = parse_telegram_init_data(init_data)
+    if not parsed or not isinstance(parsed.get("user"), dict):
+        return None
+    return parsed["user"]

@@ -133,9 +133,9 @@ function setTool(tool) {
 // ─── Save ─────────────────────────────────────────────────────
 
 async function saveLayout() {
-  const partnerTelegramId = tg?.initDataUnsafe?.user?.id;
-  if (!partnerTelegramId) {
-    showToast('❌ Не вдалося отримати ID партнера');
+  const initData = tg?.initData;
+  if (!initData) {
+    showToast('❌ Не вдалося підтвердити користувача');
     return;
   }
 
@@ -153,7 +153,7 @@ async function saveLayout() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         layout_config: layoutConfig,
-        partner_telegram_id: partnerTelegramId,
+        init_data: initData,
       }),
     });
 

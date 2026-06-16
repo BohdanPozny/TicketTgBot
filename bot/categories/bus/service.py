@@ -46,7 +46,22 @@ class BusService:
         seat_number: int,
         price: float,
     ):
-        """Блокує місце та створює замовлення."""
+        event = await self.event_repo.get_event_by_id(event_id)
+        if not event:
+            return None, "Рейс не знайдено."
+
+        layout_config = event.layout_config or {}
+        total_seats = int(layout_config.get("total_seats") or 40)
+        blocked_seats = set(layout_config.get("blocked_seats") or [])
+
+        expected_key = f"seat_{seat_number}"
+        if seat_key != expected_key:
+            return None, "Некоректні дані місця."
+        if seat_number < 1 or seat_number > total_seats:
+            return None, "Такого місця немає у схемі."
+        if seat_key in blocked_seats:
+            return None, "Це місце недоступне."
+
         expires_at = datetime.now() + timedelta(seconds=settings.seat_lock_timeout)
 
         lock = await self.order_repo.lock_seat(
@@ -62,7 +77,7 @@ class BusService:
         order = await self.order_repo.create(
             user_id=user.id,
             event_id=event_id,
-            total_price=price,
+            total_price=event.base_price,
             seat_details={"seat": seat_number, "seat_key": seat_key},
             payment_payload=payload,
         )

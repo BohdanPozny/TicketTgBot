@@ -1,6 +1,9 @@
+from datetime import datetime, timedelta
+
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
+from core.config import settings
 from database.models import Ticket, TicketStatus, TicketVerification, VerificationStatus
 from database.repositories.tickets import TicketRepository
 
@@ -53,3 +56,20 @@ class VerificationService:
         if verification and verification.status == VerificationStatus.requested:
             await self.ticket_repo.update_verification_status(verification_id, VerificationStatus.expired)
             await self.ticket_repo.set_status(verification.ticket_id, TicketStatus.paid)
+
+    async def expire_stale_verifications(self) -> int:
+        cutoff = datetime.now() - timedelta(seconds=settings.verification_timeout)
+        result = await self.session.execute(
+            select(TicketVerification).where(
+                TicketVerification.status == VerificationStatus.requested,
+                TicketVerification.created_at <= cutoff,
+            )
+        )
+        verifications = list(result.scalars().all())
+        for verification in verifications:
+            await self.ticket_repo.update_verification_status(
+                verification.id,
+                VerificationStatus.expired,
+            )
+            await self.ticket_repo.set_status(verification.ticket_id, TicketStatus.paid)
+        return len(verifications)

@@ -43,7 +43,23 @@ class CinemaService:
         seat: int,
         price: float,
     ):
-        """Блокує місце та створює замовлення."""
+        event = await self.event_repo.get_event_by_id(event_id)
+        if not event:
+            return None, "Сеанс не знайдено."
+
+        layout_config = event.layout_config or {}
+        rows = int(layout_config.get("rows") or 8)
+        seats_per_row = int(layout_config.get("seats_per_row") or 10)
+        blocked_seats = set(layout_config.get("blocked_seats") or [])
+
+        expected_key = f"{row}_{seat}"
+        if seat_key != expected_key:
+            return None, "Некоректні дані місця."
+        if row < 1 or row > rows or seat < 1 or seat > seats_per_row:
+            return None, "Такого місця немає у схемі."
+        if seat_key in blocked_seats:
+            return None, "Це місце недоступне."
+
         expires_at = datetime.now() + timedelta(seconds=settings.seat_lock_timeout)
 
         lock = await self.order_repo.lock_seat(
@@ -59,7 +75,7 @@ class CinemaService:
         order = await self.order_repo.create(
             user_id=user.id,
             event_id=event_id,
-            total_price=price,
+            total_price=event.base_price,
             seat_details={"row": row, "seat": seat, "seat_key": seat_key},
             payment_payload=payload,
         )

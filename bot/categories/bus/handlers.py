@@ -139,9 +139,8 @@ async def handle_bus_webapp_data(message: Message, db_user: User) -> None:
     event_id = data.get("event_id")
     seat_number = data.get("seat_number")
     seat_key = data.get("seat_key", f"seat_{seat_number}")
-    price = data.get("price")
 
-    if not all([event_id, seat_number is not None, price]):
+    if not all([event_id, seat_number is not None]):
         await message.answer("❌ Некоректні дані від Mini App.")
         return
 
@@ -157,7 +156,7 @@ async def handle_bus_webapp_data(message: Message, db_user: User) -> None:
             event_id=event_id,
             seat_key=seat_key,
             seat_number=seat_number,
-            price=price,
+            price=event.base_price,
         )
         await session.commit()
 
@@ -175,7 +174,7 @@ async def handle_bus_webapp_data(message: Message, db_user: User) -> None:
         f"{route}\n"
         f"📅 {format_datetime(event.datetime)}\n"
         f"🪑 Місце {seat_number}\n"
-        f"💰 {format_price(price)}\n\n"
+        f"💰 {format_price(order.total_price)}\n\n"
         "Підтвердіть замовлення та перейдіть до оплати:",
         reply_markup=bus_order_confirm_keyboard(order.id),
     )

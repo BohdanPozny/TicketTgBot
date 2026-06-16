@@ -136,9 +136,8 @@ async def handle_cinema_webapp_data(message: Message, db_user: User) -> None:
     row = data.get("row")
     seat = data.get("seat")
     seat_key = data.get("seat_key", f"{row}_{seat}")
-    price = data.get("price")
 
-    if not all([event_id, row is not None, seat is not None, price]):
+    if not all([event_id, row is not None, seat is not None]):
         await message.answer("❌ Некоректні дані від Mini App.")
         return
 
@@ -155,7 +154,7 @@ async def handle_cinema_webapp_data(message: Message, db_user: User) -> None:
             seat_key=seat_key,
             row=row,
             seat=seat,
-            price=price,
+            price=event.base_price,
         )
         await session.commit()
 
@@ -167,7 +166,7 @@ async def handle_cinema_webapp_data(message: Message, db_user: User) -> None:
         f"🎬 <b>{event.title}</b>\n"
         f"📅 {format_datetime(event.datetime)}\n"
         f"🪑 Ряд {row}, Місце {seat}\n"
-        f"💰 {format_price(price)}\n\n"
+        f"💰 {format_price(order.total_price)}\n\n"
         "Підтвердіть замовлення та перейдіть до оплати:",
         reply_markup=cinema_order_confirm_keyboard(order.id),
     )
