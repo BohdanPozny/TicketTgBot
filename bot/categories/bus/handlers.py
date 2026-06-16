@@ -1,7 +1,7 @@
 import json
 
 from aiogram import F, Router
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import BufferedInputFile, CallbackQuery, LabeledPrice, Message
 
 from bot.categories.bus.keyboards import (
     bus_event_detail_keyboard,
@@ -10,6 +10,7 @@ from bot.categories.bus.keyboards import (
 )
 from bot.categories.bus.service import BusService
 from bot.common.keyboards import back_keyboard
+from core.config import settings
 from core.utils import format_datetime, format_price
 from database.db_setup import async_session_factory
 from database.models import User
@@ -75,6 +76,15 @@ async def cb_bus_pay(callback: CallbackQuery, db_user: User) -> None:
         payment_svc = PaymentService(session)
         ticket_svc = TicketService(session)
 
+        if settings.payment_provider_token:
+            order = await payment_svc.get_payable_order(order_id, db_user.id)
+            if not order:
+                await callback.answer("❌ Замовлення не знайдено або вже оброблено.", show_alert=True)
+                return
+            await _send_invoice(callback, order)
+            await callback.answer()
+            return
+
         order = await payment_svc.simulate_payment(order_id, db_user.id)
         if not order:
             await callback.answer("❌ Замовлення не знайдено або вже оброблено.", show_alert=True)
@@ -83,7 +93,6 @@ async def cb_bus_pay(callback: CallbackQuery, db_user: User) -> None:
         ticket, qr_image_bytes = await ticket_svc.create_ticket(order)
         await session.commit()
 
-    from aiogram.types import BufferedInputFile
     qr_file = BufferedInputFile(qr_image_bytes, filename=f"ticket_{ticket.id}.png")
     seat = ""
     if order.seat_details:
@@ -111,12 +120,27 @@ async def cb_bus_pay(callback: CallbackQuery, db_user: User) -> None:
     await callback.answer("🎟 Квиток готовий!")
 
 
+async def _send_invoice(callback: CallbackQuery, order) -> None:
+    amount = int(round(order.total_price * 100))
+    await callback.message.answer_invoice(
+        title=f"Квиток: {order.event.title}",
+        description=format_datetime(order.event.datetime),
+        payload=order.payment_payload,
+        provider_token=settings.payment_provider_token,
+        currency=settings.payment_currency,
+        prices=[LabeledPrice(label="Квиток", amount=amount)],
+    )
+
+
 @router.callback_query(F.data.startswith("bus:cancel:"))
 async def cb_bus_cancel(callback: CallbackQuery, db_user: User) -> None:
     order_id = int(callback.data.split(":")[2])
     async with async_session_factory() as session:
         repo = OrderRepository(session)
-        await repo.cancel(order_id)
+        order = await repo.cancel(order_id, user_id=db_user.id)
+        if not order:
+            await callback.answer("❌ Замовлення не знайдено або вже оброблено.", show_alert=True)
+            return
         await session.commit()
 
     await callback.message.edit_text(

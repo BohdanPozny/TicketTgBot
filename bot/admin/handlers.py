@@ -1,7 +1,7 @@
 from aiogram import F, Router
 from aiogram.types import CallbackQuery, Message
 
-from bot.admin.keyboards import admin_panel_keyboard, admin_user_keyboard
+from bot.admin.keyboards import admin_panel_keyboard, admin_user_keyboard, admin_users_keyboard
 from bot.common.keyboards import back_keyboard
 from core.config import settings
 from database.db_setup import async_session_factory
@@ -37,16 +37,34 @@ async def cb_admin_users(callback: CallbackQuery, db_user: User) -> None:
         repo = UserRepository(session)
         users = await repo.get_all()
 
-    role_emoji = {"customer": "👤", "partner": "🏢", "admin": "⚙️"}
-    lines = [f"👥 <b>Всі користувачі</b> ({len(users)}):\n"]
-    for u in users[:30]:
-        emoji = role_emoji.get(u.role.value, "👤")
-        name = u.username or u.first_name or str(u.telegram_id)
-        lines.append(f"{emoji} @{name} | <code>{u.telegram_id}</code> | {u.role.value}")
-
     await callback.message.edit_text(
-        "\n".join(lines),
-        reply_markup=back_keyboard("admin:panel"),
+        f"👥 <b>Всі користувачі</b> ({len(users)})\n\nОберіть користувача:",
+        reply_markup=admin_users_keyboard(users),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin:user:"))
+async def cb_admin_user(callback: CallbackQuery, db_user: User) -> None:
+    if not is_admin(db_user):
+        await callback.answer("⛔ Доступ заборонено.", show_alert=True)
+        return
+
+    target_telegram_id = int(callback.data.split(":")[2])
+    async with async_session_factory() as session:
+        repo = UserRepository(session)
+        target = await repo.get_by_telegram_id(target_telegram_id)
+
+    if not target:
+        await callback.answer("❌ Користувача не знайдено.", show_alert=True)
+        return
+
+    name = target.username or target.first_name or str(target.telegram_id)
+    await callback.message.edit_text(
+        f"👤 <b>{name}</b>\n"
+        f"Telegram ID: <code>{target.telegram_id}</code>\n"
+        f"Поточна роль: <b>{target.role.value}</b>",
+        reply_markup=admin_user_keyboard(target),
     )
     await callback.answer()
 
@@ -93,6 +111,12 @@ async def cb_set_role(callback: CallbackQuery, db_user: User) -> None:
 
     if target:
         name = target.username or target.first_name or str(target_telegram_id)
-        await callback.answer(f"✅ Роль @{name} змінено на {new_role.value}", show_alert=True)
+        await callback.message.edit_text(
+            f"👤 <b>{name}</b>\n"
+            f"Telegram ID: <code>{target.telegram_id}</code>\n"
+            f"Поточна роль: <b>{target.role.value}</b>",
+            reply_markup=admin_user_keyboard(target),
+        )
+        await callback.answer(f"✅ Роль змінено на {new_role.value}", show_alert=True)
     else:
         await callback.answer("❌ Користувача не знайдено.", show_alert=True)

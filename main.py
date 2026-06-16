@@ -22,7 +22,8 @@ from services.verification_service import VerificationService
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     setup_routers()
-    await create_tables()
+    if settings.database_auto_create_tables:
+        await create_tables()
     await _seed_categories()
     verification_task = asyncio.create_task(_expire_verifications_loop())
 
@@ -78,8 +79,8 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=settings.cors_origins or ([settings.webhook_url] if settings.webhook_url else []),
+    allow_credentials=bool(settings.cors_origins or settings.webhook_url),
     allow_methods=["*"],
     allow_headers=["*"],
 )

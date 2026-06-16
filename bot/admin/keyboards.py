@@ -14,6 +14,22 @@ def admin_panel_keyboard() -> InlineKeyboardMarkup:
     )
 
 
+def admin_users_keyboard(users: list[User]) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    role_emoji = {"customer": "👤", "partner": "🏢", "admin": "⚙️"}
+    for user in users[:30]:
+        emoji = role_emoji.get(user.role.value, "👤")
+        name = user.username or user.first_name or str(user.telegram_id)
+        builder.row(
+            InlineKeyboardButton(
+                text=f"{emoji} {name} | {user.role.value}",
+                callback_data=f"admin:user:{user.telegram_id}",
+            )
+        )
+    builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="admin:panel"))
+    return builder.as_markup()
+
+
 def admin_user_keyboard(user: User) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     # Кнопки зміни ролі

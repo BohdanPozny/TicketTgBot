@@ -5,6 +5,7 @@ from bot.loader import bot, dp, setup_routers
 from database.db_setup import create_tables
 from database.repositories.events import EventRepository
 from database.db_setup import async_session_factory
+from core.config import settings
 from services.verification_service import VerificationService
 
 
@@ -20,7 +21,8 @@ async def seed_categories():
 
 async def main():
     setup_routers()
-    await create_tables()
+    if settings.database_auto_create_tables:
+        await create_tables()
     await seed_categories()
     await bot.delete_webhook(drop_pending_updates=True)
     verification_task = asyncio.create_task(expire_verifications_loop())

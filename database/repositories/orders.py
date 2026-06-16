@@ -56,16 +56,22 @@ class OrderRepository:
             order.paid_at = datetime.now()
         return order
 
-    async def cancel(self, order_id: int) -> Optional[Order]:
+    async def cancel(self, order_id: int, user_id: Optional[int] = None) -> Optional[Order]:
         order = await self.get_by_id(order_id)
-        if order:
-            order.status = OrderStatus.cancelled
-            if order.seat_details and order.seat_details.get("seat_key"):
-                await self.release_seat_lock(
-                    event_id=order.event_id,
-                    seat_key=order.seat_details["seat_key"],
-                    user_id=order.user_id,
-                )
+        if not order:
+            return None
+        if user_id is not None and order.user_id != user_id:
+            return None
+        if order.status != OrderStatus.pending:
+            return None
+
+        order.status = OrderStatus.cancelled
+        if order.seat_details and order.seat_details.get("seat_key"):
+            await self.release_seat_lock(
+                event_id=order.event_id,
+                seat_key=order.seat_details["seat_key"],
+                user_id=order.user_id,
+            )
         return order
 
     async def get_user_orders(self, user_id: int) -> list[Order]:
@@ -106,11 +112,11 @@ class OrderRepository:
             user_id=user_id,
             expires_at=expires_at,
         )
-        self.session.add(lock)
         try:
-            await self.session.flush()
+            async with self.session.begin_nested():
+                self.session.add(lock)
+                await self.session.flush()
         except IntegrityError:
-            await self.session.rollback()
             return None
         return lock
 

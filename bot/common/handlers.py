@@ -1,6 +1,6 @@
 from aiogram import F, Router
 from aiogram.filters import Command, CommandStart
-from aiogram.types import BufferedInputFile, CallbackQuery, Message
+from aiogram.types import BufferedInputFile, CallbackQuery, Message, PreCheckoutQuery
 
 from bot.common.keyboards import back_keyboard, main_menu_keyboard, ticket_verification_keyboard
 from core.security import hash_token
@@ -9,6 +9,8 @@ from database.db_setup import async_session_factory
 from database.models import Ticket, TicketStatus, User
 from database.repositories.tickets import TicketRepository
 from database.repositories.users import UserRepository
+from services.payment_service import PaymentService
+from services.ticket_service import TicketService
 from services.verification_service import VerificationService
 
 router = Router(name="common")
@@ -101,6 +103,64 @@ async def show_my_tickets(event, db_user: User) -> None:
         await event.answer()
     else:
         await message.answer(text, reply_markup=back_keyboard())
+
+
+@router.pre_checkout_query()
+async def pre_checkout(pre_checkout_query: PreCheckoutQuery) -> None:
+    async with async_session_factory() as session:
+        payment_svc = PaymentService(session)
+        order = await payment_svc.order_repo.get_by_payment_payload(pre_checkout_query.invoice_payload)
+        if (
+            not order
+            or order.user.telegram_id != pre_checkout_query.from_user.id
+            or not await payment_svc.can_pay_order(order)
+        ):
+            await pre_checkout_query.answer(
+                ok=False,
+                error_message="Замовлення вже недоступне. Оберіть місце ще раз.",
+            )
+            return
+
+    await pre_checkout_query.answer(ok=True)
+
+
+@router.message(F.successful_payment)
+async def successful_payment(message: Message, db_user: User) -> None:
+    payment = message.successful_payment
+    async with async_session_factory() as session:
+        payment_svc = PaymentService(session)
+        ticket_svc = TicketService(session)
+
+        order = await payment_svc.process_by_payload(payment.invoice_payload, user_id=db_user.id)
+        if not order:
+            await message.answer("❌ Не вдалося обробити оплату. Зверніться до підтримки.")
+            return
+
+        ticket, qr_image_bytes = await ticket_svc.create_ticket(order)
+        await session.commit()
+
+    seat = ""
+    if ticket.seat_details:
+        row = ticket.seat_details.get("row")
+        seat_num = ticket.seat_details.get("seat")
+        if row:
+            seat = f"\n🪑 Ряд {row}, Місце {seat_num}"
+        elif seat_num:
+            seat = f"\n🪑 Місце {seat_num}"
+
+    qr_file = BufferedInputFile(qr_image_bytes, filename=f"ticket_{ticket.id}.png")
+    await message.answer_photo(
+        photo=qr_file,
+        caption=(
+            f"✅ <b>Оплата успішна!</b>\n\n"
+            f"<b>{ticket.event.title}</b>\n"
+            f"📅 {format_datetime(ticket.event.datetime)}"
+            f"{seat}\n"
+            f"💰 {format_price(order.total_price)}\n\n"
+            "🎟 Покажіть QR-код контролеру.\n"
+            f"ID квитка: #{ticket.id}"
+        ),
+    )
 
 
 async def _handle_verification(message: Message, controller: User, token: str) -> None:
